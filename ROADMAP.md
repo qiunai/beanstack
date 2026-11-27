@@ -14,12 +14,15 @@ BeanStack's upstream lives in a production repository. Retrospectives there keep
 
 每次发版在 [CHANGELOG.md](CHANGELOG.md) 写 Added / Changed / Removed，模型清单换代要附评测依据。
 
-## v0.2 — 可用性 / Usability
+## v0.2 — 可用性与配套钩子 / Usability & Companion Hooks
 
+- [x] 确定性守卫钩子（`templates/hooks/bash-guard.mjs`）：防绕过门禁、防吞退出码与子代理纪律（Claude / Codex / Grok 共用）
+- [x] 回合状态与模式切换钩子（`templates/hooks/round-state.mjs`）：识别「默认 / 均衡 / 省 Claude」与通道开关、落盘用户原始需求、压缩后重注入推进契约、写派工账本、拦截未关验证浏览器与手写 sleep 轮询
+- [x] 压缩保真清单（`templates/hooks/compact-instructions.md`）与项目 settings 模板（强制中文 + 技能清单字符预算）
+- [x] Claude Code 底部状态栏参考脚本（`templates/statusline/`）与 `install.sh --statusline`
+- [x] 前端设计规范补充 Claude Design 原型定稿工作法 + 6 轮模型评测明细表（`docs/model-eval.md`）
 - [ ] 英文版技能（`skills/beanstack-en/`），与中文版同源维护
-- [ ] 模式切换钩子：`UserPromptSubmit` 钩子把「默认 / 均衡 / 省 Claude」与各通道开关注入每个回合
-- [ ] 需求核对表工具：条目的增改、放行、证据登记，上下文压缩后以它为准
-- [ ] 压缩后重新注入流程契约的钩子
+- [ ] 独立需求核对表 CLI 工具（条目的增改、放行、证据登记）
 - [ ] `channels.sh --suggest-mode`：按本机检测到的通道建议用哪种模式
 
 ## v0.3 — 可复现的评测 / Reproducible evals

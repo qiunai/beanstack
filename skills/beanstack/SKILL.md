@@ -41,7 +41,7 @@ description: 通用工程工作流手册，Claude Code、Codex、Cursor 共用�
 |---|---|
 | 各阶段 | 探索 `openspec-explore`；提案 `openspec-propose`；改已有变更 `openspec-update-change`；实现 `openspec-apply-change`；冻结 `openspec-verify-change` → `openspec-archive-change` |
 | 任何视觉产出 | 动手前读项目设计规范相关条款，加载 `frontend-design` + `impeccable` |
-| 新页面、整页改版、重新设计 | 先出设计稿再实现（`references/dispatch.md`「设计稿先行」） |
+| 新页面、整页改版、重新设计 | 使用 Claude 宿主时优先用 **Claude Design** 出原型与视觉定稿，再按项目设计规范 token 1:1 还原（其余宿主走 `references/dispatch.md`「设计稿先行」） |
 | 动效 | 新建 `animate`（按需 GSAP、`threejs-*`）；评审 `review-animations` / `improve-animations` |
 | 用户可见中文文案 | `humanizer-zh` |
 | 用户问进度、隔很久回来；并行任务收货后汇报 | `references/progress.md` |

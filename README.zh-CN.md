@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-  <img alt="version" src="https://img.shields.io/badge/version-0.1.0-green.svg">
+  <img alt="version" src="https://img.shields.io/badge/version-0.2.0-green.svg">
   <img alt="Agent Skill" src="https://img.shields.io/badge/Agent%20Skill-SKILL.md-d97757.svg">
   <img alt="hosts" src="https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20Cursor-555.svg">
   <img alt="OpenSpec" src="https://img.shields.io/badge/built%20on-OpenSpec-7c3aed.svg">
@@ -114,12 +114,13 @@ OpenSpec 要求 Node 22.20 以上。
 请帮我安装 BeanStack 工作流和它的地基组件：
 1. 把 https://github.com/qiunai/beanstack 克隆到 ~/.beanstack（已存在就 git pull）。
 2. 运行 ~/.beanstack/install.sh，把技能装到用户级目录；已存在的同名技能不要覆盖，先告诉我。
-3. 运行 ~/.beanstack/install.sh --project <当前项目根目录>，装入子代理定义和 AGENTS.md 模板。
-4. 安装 OpenSpec：npm install -g @fission-ai/openspec@latest，然后在项目根目录运行 openspec init。
-5. 如果这个项目有前端：在项目根目录运行 npx impeccable install，并提醒我重启后运行 /impeccable init。
-6. 安装 Playwright CLI：npm install -g @playwright/cli@latest，再运行 playwright-cli install --skills。
-7. 打开项目里的 AGENTS.md，根据这个项目实际的测试、启动、部署命令，把 <!-- TODO --> 处填好，给我看改动。
-8. 运行 ~/.claude/skills/beanstack/scripts/channels.sh，告诉我检测到了哪些外部模型 CLI，缺的列出安装命令，不要替我装。
+3. 运行 ~/.beanstack/install.sh --project <当前项目根目录>，装入子代理定义、钩子套件（bash-guard、round-state、compact-instructions）、项目 settings 模板、状态栏脚本和 AGENTS.md 模板。
+4. 如使用 Claude Code，运行 ~/.beanstack/install.sh --statusline 装入底部状态栏，并提示我把 statusLine 与 autoCompactWindow（400000）加入 ~/.claude/settings.json。
+5. 安装 OpenSpec：npm install -g @fission-ai/openspec@latest，然后在项目根目录运行 openspec init。
+6. 如果这个项目有前端：在项目根目录运行 npx impeccable install，并提醒我重启后运行 /impeccable init。
+7. 安装 Playwright CLI：npm install -g @playwright/cli@latest，再运行 playwright-cli install --skills。
+8. 打开项目里的 AGENTS.md，根据这个项目实际的测试、启动、部署命令，把 <!-- TODO --> 处填好，给我看改动。
+9. 运行 ~/.claude/skills/beanstack/scripts/channels.sh，告诉我检测到了哪些外部模型 CLI，缺的列出安装命令，不要替我装。
 ```
 
 ### 方式二：一条命令（npx）
@@ -130,14 +131,15 @@ OpenSpec 要求 Node 22.20 以上。
 npx skills add qiunai/beanstack -g -a claude-code codex cursor gemini-cli -y
 ```
 
-这种方式只装技能本体。子代理定义和 `AGENTS.md` 模板还要跑一次下面的 `install.sh --project`。
+这种方式只装技能本体。子代理定义、钩子套件、底部状态栏和 `AGENTS.md` 模板还要跑一次下面的 `install.sh --project`。
 
 ### 方式三：克隆后运行安装脚本
 
 ```bash
 git clone https://github.com/qiunai/beanstack.git ~/.beanstack
 ~/.beanstack/install.sh                          # 用户级技能：软链到 ~/.claude/skills 与 ~/.agents/skills，已存在不覆盖
-~/.beanstack/install.sh --project /path/to/repo  # 项目级：6 个子代理定义 + AGENTS.md 模板
+~/.beanstack/install.sh --project /path/to/repo  # 项目级：6 个子代理 + 钩子套件 + settings 模板 + 状态栏脚本 + AGENTS.md
+~/.beanstack/install.sh --statusline             # 可选（Claude Code）：安装底部状态栏到 ~/.claude/statusline.sh
 ```
 
 加 `--dry-run` 只看会做什么，不落盘。
@@ -333,12 +335,46 @@ git clone https://github.com/qiunai/beanstack.git ~/.beanstack
 
 <br>
 
+### 钩子套件：把经验变成确定性拦截
+
+光把规矩写进提示词，长会话和子代理还是会忘。BeanStack 把最常踩的坑做成了配套钩子（`templates/hooks/` + `templates/claude-settings.json` + `templates/codex-hooks.json`），和技能本体搭配使用：
+
+| 组件 | 适用宿主 | 它拦住或保证什么 |
+|---|---|---|
+| **`bash-guard.mjs`**（PreToolUse） | Claude Code / Codex / Grok | 确定性拦截直接 `gh pr merge`、绕过 git hooks（`--no-verify`）、裸 `git push --force`、宽匹配 `pkill/killall`、测试输出直接管道吞退出码；**子代理专属纪律**：禁止子代理再派代理、禁止跑整包全量测试、禁止手写 `while/until ... sleep` 轮询、前台超时不超过 290 秒 |
+| **`round-state.mjs`**（全生命周期） | Claude Code | 每次发言识别「默认 / 均衡 / 省 Claude」与通道开关（GPT fast / Grok fast / Astra / Gemini），自动提醒按 BeanStack 推进并**强制中文回复**；压缩或恢复后把推进契约、活跃 OpenSpec 变更与**用户原始需求**原样重新注入；协调器连续亲手改代码或首次改 UI 时提醒派工与设计规范；实时写子代理账本；收尾拦截遗留未关的 `playwright-cli` 会话与手写 sleep 等待 |
+| **`compact-instructions.md`**（PreCompact） | Claude Code | 上下文压缩前注入保真清单：强制保留用户授权/否决原话、每条需求状态、调度模式、后台任务、提交号与证据路径 |
+| **`claude-settings.json`** | Claude Code | 内置 `"language": "chinese"` 强制中文，并设置 `SLASH_COMMAND_TOOL_CHAR_BUDGET=4000`（实测主会话与每个子代理每次调用少 5,000+ token） |
+
+<br>
+
+### 底部状态栏（本机执行，不耗 token）
+
+多路并行时，随时看清**当前模型与档位、上下文距离自动压缩还有多远、周额度是否紧张、现在是什么模式、后台有哪些外部模型和子代理在跑**非常关键：
+
+```text
+Opus 5.5 · medium  ▰▰▱▱│▱▱▱▱▱▱ 192K/1M  7d 95% 至11/30 16:00  模式 均衡 · Gemini  子代理 sonnet/high
+```
+
+- `│` 标出 `autoCompactWindow`（推荐设为 `400000`：高了费额度，低了频繁压缩易丢细节，配合 `PreCompact` 与 `round-state.mjs` 压缩后把需求原话带回来）。
+- 5h / 7d 订阅额度超过 50% 才显示，≥80% 自动附重置时间；模式与子代理状态直接读 `.claude/state/round.json` 和 `dispatch-ledger.jsonl`。
+- 装法：运行 `~/.beanstack/install.sh --statusline`（依赖 `jq`），并在 `~/.claude/settings.json` 加上：
+
+```json
+{
+  "statusLine": { "type": "command", "command": "bash ~/.claude/statusline.sh", "refreshInterval": 5 },
+  "autoCompactWindow": 400000
+}
+```
+
+<br>
+
 ### 工具选型
 
 | 环节 | 选了什么 | 为什么 |
 |---|---|---|
 | 规格管理 | [**OpenSpec**](https://github.com/Fission-AI/OpenSpec) | 试过 [Superpowers](https://github.com/obra/superpowers) 等多套方案，最后选了它：提案、规格增量、归档一条线，能和 PR 一一对应，攒到 588 份规格还管得住 |
-| 视觉风格 | 自定义 `DESIGN.md` + [**Impeccable**](https://github.com/pbakaus/impeccable) | 先和 AI 一起定好产品风格，写成设计规范。第三方视觉技能推荐 Impeccable：试过 [UI UX Pro Max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) 等多个之后，它的细节把控、风格约束和自适应最好 |
+| 视觉风格 | **Claude Design**（Claude 宿主）+ 自定义 `DESIGN.md` + [**Impeccable**](https://github.com/pbakaus/impeccable) | 用 Claude 做新页面或整页改版时，先用 **Claude Design** 出交互与视觉原型定稿，再按「还原构图与交互、颜色/字号/间距一律走项目 `DESIGN.md` token」落地——实测效果远好于让通用模型盲写前端。第三方视觉技能推荐 Impeccable：试过 [UI UX Pro Max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) 等多个之后，它的细节把控、风格约束和自适应最好 |
 | 浏览器验证 | [**Playwright CLI**](https://github.com/microsoft/playwright-cli) | 为编码代理设计，验证位用它走用户路径、截图 |
 | 外部模型 | Codex CLI、Grok CLI、Antigravity、Cursor agent、Devin | 统一由 `scripts/dispatch.sh` 后台启动，写派工账本，识别额度耗尽后自动换通道 |
 
@@ -346,9 +382,9 @@ git clone https://github.com/qiunai/beanstack.git ~/.beanstack
 
 ### 在其它 Agent 上用，或者只借思想
 
-- **技能本身是纯文本。** 任何能读 `SKILL.md` 或 `AGENTS.md` 的 Agent 都能按它走流程。Codex 会读 `~/.agents/skills`，当协调器时用它自己的子代理。
+- **技能本身是纯文本。** 任何能读 `SKILL.md` 或 `AGENTS.md` 的 Agent 都能按它走流程。Codex 会读 `~/.agents/skills` 与 `.codex/hooks.json`，当协调器时用它自己的子代理。
 - **没有子代理的宿主**，可以用 `dispatch.sh` 把活派给别的模型 CLI，相当于把多个模型聚合成一支团队。
-- **只想借思想也行。** 对齐三步、需求核对表、先红后绿、验证位不能是实现者、停止条件、交付总结格式，这些都能单独抽出来，改成适合你团队的版本。
+- **只想借思想也行。** 对齐三步、需求核对表、先红后绿、验证位不能是实现者、停止条件、交付总结格式、钩子拦截清单和底部状态栏，都可以单独抽出来改成适合你团队的版本。
 
 <br>
 
@@ -357,8 +393,14 @@ git clone https://github.com/qiunai/beanstack.git ~/.beanstack
 ```
 beanstack/
 ├── skills/beanstack/      技能本体：SKILL.md + references/（11 份）+ scripts/（派工启动器与统计脚本）
-├── templates/             AGENTS.md 项目基线模板 + agents/ 下 6 个子代理定义
-├── docs/model-eval.md     评测摘要
+├── templates/
+│   ├── AGENTS.md          项目基线模板
+│   ├── agents/            6 个子代理定义（scout / exec / core / design / review / verify）
+│   ├── hooks/             配套钩子套件（bash-guard、round-state、compact-instructions 及单测）
+│   ├── statusline/        Claude Code 底部状态栏参考脚本与指路桩
+│   ├── claude-settings.json  Claude Code 项目级钩子与强制中文/token 预算模板
+│   └── codex-hooks.json   Codex 侧 bash-guard 钩子模板
+├── docs/model-eval.md     6 轮模型评测明细表与关键结论
 ├── assets/                配图
 └── install.sh
 ```
@@ -371,9 +413,10 @@ beanstack/
 
 ## 路线图
 
-当前 **v0.1.0**。技能正文目前是中文，英文版排在 v0.2。
+当前 **v0.2.0**。技能正文目前是中文，英文版排在后续版本。
 
-- **v0.2**：英文版技能；开源模式切换钩子、需求核对表工具
+- **v0.2.0（当前）**：开源配套钩子套件（子代理纪律、模式切换、压缩保真、验证收尾拦截、强制中文配置）、底部状态栏参考脚本、Claude Design 前端设计规范与完整模型实测明细表
+- **v0.2.x**：英文版技能（`skills/beanstack-en/`）；`channels.sh --suggest-mode`
 - **v0.3**：开源评测框架，让你在自己的仓库上重跑模型评测；接入 DeepSeek 等更多通道
 - **v0.4**：打包成插件，一条命令安装
 - **v1.0**：模型清单与路由表格式稳定

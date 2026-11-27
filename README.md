@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-  <img alt="version" src="https://img.shields.io/badge/version-0.1.0-green.svg">
+  <img alt="version" src="https://img.shields.io/badge/version-0.2.0-green.svg">
   <img alt="Agent Skill" src="https://img.shields.io/badge/Agent%20Skill-SKILL.md-d97757.svg">
   <img alt="hosts" src="https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20Cursor-555.svg">
   <img alt="OpenSpec" src="https://img.shields.io/badge/built%20on-OpenSpec-7c3aed.svg">
@@ -114,12 +114,13 @@ Send this to the agent you are using (Claude Code, Codex and Cursor all work), a
 Please install the BeanStack workflow and its foundation components:
 1. Clone https://github.com/qiunai/beanstack into ~/.beanstack (if it already exists, git pull).
 2. Run ~/.beanstack/install.sh to install the skill at user level; do not overwrite an existing skill with the same name, tell me first.
-3. Run ~/.beanstack/install.sh --project <current project root> to add the subagent definitions and the AGENTS.md template.
-4. Install OpenSpec: npm install -g @fission-ai/openspec@latest, then run openspec init in the project root.
-5. If this project has a frontend: run npx impeccable install in the project root, and remind me to run /impeccable init after restarting.
-6. Install Playwright CLI: npm install -g @playwright/cli@latest, then run playwright-cli install --skills.
-7. Open AGENTS.md in the project and fill in the <!-- TODO --> slots with this project's actual test, run and deploy commands. Show me the changes.
-8. Run ~/.claude/skills/beanstack/scripts/channels.sh and tell me which external model CLIs were detected. List install commands for the missing ones; do not install them for me.
+3. Run ~/.beanstack/install.sh --project <current project root> to add the subagent definitions, hook suite (bash-guard, round-state, compact-instructions), settings templates, statusline script, and AGENTS.md template.
+4. If using Claude Code, run ~/.beanstack/install.sh --statusline and remind me to add statusLine and autoCompactWindow (400000) to ~/.claude/settings.json.
+5. Install OpenSpec: npm install -g @fission-ai/openspec@latest, then run openspec init in the project root.
+6. If this project has a frontend: run npx impeccable install in the project root, and remind me to run /impeccable init after restarting.
+7. Install Playwright CLI: npm install -g @playwright/cli@latest, then run playwright-cli install --skills.
+8. Open AGENTS.md in the project and fill in the <!-- TODO --> slots with this project's actual test, run and deploy commands. Show me the changes.
+9. Run ~/.claude/skills/beanstack/scripts/channels.sh and tell me which external model CLIs were detected. List install commands for the missing ones; do not install them for me.
 ```
 
 ### Option 2: one command (npx)
@@ -130,14 +131,15 @@ Install into several agents at once with [vercel-labs/skills](https://github.com
 npx skills add qiunai/beanstack -g -a claude-code codex cursor gemini-cli -y
 ```
 
-This installs only the skill itself. For the subagent definitions and the `AGENTS.md` template, run `install.sh --project` from the option below once.
+This installs only the skill itself. For the subagent definitions, hook suite, status line and `AGENTS.md` template, run `install.sh --project` from the option below once.
 
 ### Option 3: clone and run the install script
 
 ```bash
 git clone https://github.com/qiunai/beanstack.git ~/.beanstack
 ~/.beanstack/install.sh                          # user-level skill: symlinks into ~/.claude/skills and ~/.agents/skills, never overwrites
-~/.beanstack/install.sh --project /path/to/repo  # project level: 6 subagent definitions + AGENTS.md template
+~/.beanstack/install.sh --project /path/to/repo  # project level: 6 subagents + hook suite + settings templates + statusline + AGENTS.md
+~/.beanstack/install.sh --statusline             # optional (Claude Code): install bottom status line to ~/.claude/statusline.sh
 ```
 
 Add `--dry-run` to see what it would do without writing anything.
@@ -333,12 +335,46 @@ We run **Claude Max 20x, ChatGPT Pro, Google AI Ultra, SuperGrok Heavy and Curso
 
 <br>
 
+### Hook suite: turning lessons into deterministic guards
+
+Rules written only in prompts fade over long sessions and inside subagents. BeanStack ships its companion hooks (`templates/hooks/`, `templates/claude-settings.json`, `templates/codex-hooks.json`) to enforce the hard lessons mechanically:
+
+| Component | Hosts | What it enforces |
+|---|---|---|
+| **`bash-guard.mjs`** (`PreToolUse`) | Claude Code / Codex / Grok | Deterministically blocks direct `gh pr merge`, bypassing git hooks (`--no-verify`), bare `git push --force`, wide `pkill/killall`, and piping test commands into `tail`/`head`/`grep` without `pipefail`; **subagent discipline** (`agent_id` present): forbids subagents from spawning other agents, running full test suites, writing `while/until ... sleep` loops, or exceeding 290s foreground timeout |
+| **`round-state.mjs`** (lifecycle) | Claude Code | Parses mode switches (`Default / Balanced / Save-Claude`) and channel flags (`GPT fast`, `Grok fast`, `Astra`, `Gemini`) on every prompt, reminds the agent to follow BeanStack and reply in Chinese, persists verbatim user requests and re-injects contract + state + requests after compaction/resume, nudges the coordinator when editing product/UI files directly, logs live subagents into `dispatch-ledger.jsonl`, and blocks unclosed `playwright-cli` sessions or handwritten sleep loops on stop |
+| **`compact-instructions.md`** (`PreCompact`) | Claude Code | Tells the compactor what must survive summary: verbatim user authorizations/denials, per-item requirement status, active mode, background tasks, commits, and evidence paths |
+| **`claude-settings.json`** | Claude Code | Sets `"language": "chinese"` and `SLASH_COMMAND_TOOL_CHAR_BUDGET=4000` (measured saving of 5,000+ tokens per call on coordinator and every subagent) |
+
+<br>
+
+### Bottom status line (local, zero tokens)
+
+When running 5–7 sessions in parallel, seeing model/effort, context vs. auto-compact threshold, quota pressure, active BeanStack mode, and live subagents at a glance prevents silent mistakes:
+
+```text
+Opus 5.5 · medium  ▰▰▱▱│▱▱▱▱▱▱ 192K/1M  7d 95% 至11/30 16:00  模式 均衡 · Gemini  子代理 sonnet/high
+```
+
+- `│` marks `autoCompactWindow` (recommended: `400000` — higher wastes quota, lower compacts too often; paired with `PreCompact` + `round-state.mjs` so requirements survive compaction).
+- 5h / 7d subscription usage appears above 50% and shows reset time above 80%; mode and active subagents read `.claude/state/round.json` and `dispatch-ledger.jsonl`.
+- Install with `~/.beanstack/install.sh --statusline` (requires `jq`), then add to `~/.claude/settings.json`:
+
+```json
+{
+  "statusLine": { "type": "command", "command": "bash ~/.claude/statusline.sh", "refreshInterval": 5 },
+  "autoCompactWindow": 400000
+}
+```
+
+<br>
+
 ### Tooling choices
 
 | Area | Choice | Why |
 |---|---|---|
 | Spec management | [**OpenSpec**](https://github.com/Fission-AI/OpenSpec) | We tried [Superpowers](https://github.com/obra/superpowers) and several others before settling on it: proposal, spec delta and archive form one line that maps one-to-one onto PRs, and it is still manageable at 588 specs |
-| Visual style | Your own `DESIGN.md` + [**Impeccable**](https://github.com/pbakaus/impeccable) | First settle the product style together with the AI and write it down as a design spec. For a third-party visual skill we recommend Impeccable: after trying [UI UX Pro Max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) and several others, it has the best detail control, style discipline and responsiveness |
+| Visual style | **Claude Design** (on Claude) + your own `DESIGN.md` + [**Impeccable**](https://github.com/pbakaus/impeccable) | For brand-new pages or full redesigns on Claude, settle layout and interaction prototypes in **Claude Design** first, then implement faithfully using your project's `DESIGN.md` tokens — consistently beats blind AI UI generation. For a third-party visual skill we recommend Impeccable over [UI UX Pro Max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) for detail control, token discipline and responsiveness |
 | Browser verification | [**Playwright CLI**](https://github.com/microsoft/playwright-cli) | Built for coding agents; the verifier uses it to walk user paths and take screenshots |
 | External models | Codex CLI, Grok CLI, Antigravity, Cursor agent, Devin | All launched in the background by `scripts/dispatch.sh`, which writes a dispatch ledger and switches channels automatically when it detects quota exhaustion |
 
@@ -346,9 +382,9 @@ We run **Claude Max 20x, ChatGPT Pro, Google AI Ultra, SuperGrok Heavy and Curso
 
 ### Using it on other agents, or borrowing the ideas
 
-- **The skill is plain text.** Any agent that can read `SKILL.md` or `AGENTS.md` can follow the workflow. Codex reads `~/.agents/skills` and uses its own subagents when it is the coordinator.
+- **The skill is plain text.** Any agent that can read `SKILL.md` or `AGENTS.md` can follow the workflow. Codex reads `~/.agents/skills` and `.codex/hooks.json`, and uses its own subagents when it is the coordinator.
 - **Hosts without subagents** can use `dispatch.sh` to hand work to other model CLIs, effectively assembling several models into one team.
-- **Borrowing just the ideas works too.** The three-step alignment, the requirement checklist, red-then-green, the verifier never being the implementer, stop conditions and the delivery summary format can each be pulled out and adapted for your team.
+- **Borrowing just the ideas works too.** The three-step alignment, requirement checklist, red-then-green, independent verifier, stop conditions, deterministic hook guards, and bottom status line can each be adapted independently.
 
 <br>
 
@@ -357,8 +393,14 @@ We run **Claude Max 20x, ChatGPT Pro, Google AI Ultra, SuperGrok Heavy and Curso
 ```
 beanstack/
 ├── skills/beanstack/      the skill: SKILL.md + references/ (11 docs) + scripts/ (dispatch launcher and stats scripts)
-├── templates/             AGENTS.md project baseline template + 6 subagent definitions under agents/
-├── docs/model-eval.md     benchmark summary
+├── templates/
+│   ├── AGENTS.md          project baseline template
+│   ├── agents/            6 subagent definitions (scout / exec / core / design / review / verify)
+│   ├── hooks/             companion hooks (bash-guard, round-state, compact-instructions + tests)
+│   ├── statusline/        Claude Code bottom status line reference script + user stub
+│   ├── claude-settings.json  Claude Code project hooks, language & token-budget template
+│   └── codex-hooks.json   Codex bash-guard hook template
+├── docs/model-eval.md     6-round benchmark breakdown tables & takeaways
 ├── assets/                images
 └── install.sh
 ```
@@ -371,9 +413,10 @@ beanstack/
 
 ## Roadmap
 
-Current release: **v0.1.0**. The skill text is currently in Chinese; the English edition is planned for v0.2.
+Current release: **v0.2.0**. The skill text is currently in Chinese; the English edition is next.
 
-- **v0.2**: English edition of the skill; open-source the mode-switch hook and the requirement-checklist tool
+- **v0.2.0 (current)**: companion hook suite (subagent discipline, mode/switch parsing, compaction recovery, verifier/stop guards, Chinese output config), bottom status line reference, Claude Design frontend workflow, and full task-by-task benchmark tables
+- **v0.2.x**: English edition of the skill (`skills/beanstack-en/`); `channels.sh --suggest-mode`
 - **v0.3**: open-source eval harness so you can re-run the model benchmark on your own repository; more channels such as DeepSeek
 - **v0.4**: package as a plugin for one-command install
 - **v1.0**: stable model roster and routing table format
